@@ -37,35 +37,6 @@ Die Projektarbeit umfasst unter anderem:
 
 ---
 
-## 📂 Verzeichnisstruktur
-
-```plaintext
-lizenzserver-projekt/                  → Hauptverzeichnis des Projekts
-├── scripts/                           → Bash-Skripte zur Lizenzserververwaltung
-│   ├── update_licenses.sh             → Lizenzdateien automatisch einspielen
-│   ├── restart_license_service.sh     → Lizenzdienste kontrolliert neustarten
-│   ├── check_license_status.sh        → Statusabfrage aktiver Lizenzen (z. B. FlexLM)
-│   ├── collect_usage_data.sh          → (Optional) Lizenznutzungsdaten sammeln
-│   └── ...
-│
-├── templates/                         → Beispielkonfigurationen und Vorlagendateien
-│   ├── license_example.lic            → Beispielhafte Lizenzdatei
-│   ├── config_template.conf           → Vorlage für Konfigurationsdateien
-│   └── cronjob.sample                 → Beispiel für geplante Ausführung (Cron)
-│
-├── docs/                              → Projektdokumentation
-│   ├── projektbeschreibung.md         → Ausführliche Projektbeschreibung
-│   ├── benutzerhandbuch.md            → Anleitung zur Nutzung der Skripte
-│   ├── technische_doku.md             → Technische Details & Umsetzung
-│   └── zeitplanung.md                 → Zeitliche Gliederung (IHK-konform)
-│
-├── README.md                          → Projektübersicht und Einführung
-├── LICENSE                            → Lizenzinformationen (z. B. MIT)
-└── .gitignore                         → Dateien, die von Git ignoriert werden sollen
-```
-
----
-
 ## 🕒 Zeitliche Gliederung (IHK-Richtwert: 40 Stunden)
 
 ### 🔹 Planung & Vorbereitung (12 Stunden)
