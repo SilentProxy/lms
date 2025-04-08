@@ -1,53 +1,72 @@
 #!/bin/bash
 
-# === Konfiguration ===
-LMUTIL="/opt/flexlm/bin/lmutil"
-LICENSE_FILE="/opt/flexlm/licenses/license.dat"
-OPTIONS_FILE="/opt/flexlm/licenses/license.opt"
-NEW_LICENSE="/tmp/new_license.dat"
-VENDOR_NAME="mathlm"  # z.B. für MathLM oder anpassen
-START_SCRIPT="/opt/flexlm/start_mathlm.sh"
-LOGFILE="/opt/flexlm/logs/license_update.log"
+# === Parameter prüfen ===
+if [ -z "$1" ]; then
+    echo "Usage: $0 <vendor_name>"
+    exit 1
+fi
 
-# === Logging-Funktion ===
+VENDOR_NAME="$1"
+UPPER_VENDOR=$(echo "$VENDOR_NAME" | tr '[:lower:]' '[:upper:]')
+
+# === Dynamische Konfiguration ===
+BASE_DIR="/opt/flexlm"
+LMUTIL="$BASE_DIR/bin/lmutil"
+LMGRD="$BASE_DIR/lmgrd"
+LICENSE_FILE="$BASE_DIR/licenses/$UPPER_VENDOR/${VENDOR_NAME}-14.1.dat"
+OPTIONS_FILE="$BASE_DIR/licenses/$UPPER_VENDOR/${VENDOR_NAME}.opt"
+NEW_LICENSE="/tmp/${VENDOR_NAME}-14.1_updated.dat"
+LOGFILE="/var/log/flexlm_update_${VENDOR_NAME}.log"
+LMGRD_LOG="/var/log/flexlm.log"
+
+# === Logging ===
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOGFILE"
 }
 
-# === 1. Lizenzen für USER blockieren ===
+# === 1. Options-Datei anpassen ===
 log "Blockiere neue Lizenzbuchungen in Options-Datei..."
 echo "RESERVE ALL USER update_block" >> "$OPTIONS_FILE"
 $LMUTIL lmreread -c "$LICENSE_FILE"
 
-# === 2. Aktive Nutzer anzeigen ===
-log "Aktive Lizenzen für $VENDOR_NAME:"
+# === 2. Aktive Sessions anzeigen ===
+log "Aktive Lizenzen anzeigen:"
 $LMUTIL lmstat -c "$LICENSE_FILE" -a | grep -A4 "$VENDOR_NAME"
 
-# Optional: gezielt Sitzungen mit lmremove beenden
+# === Optional: aktive Nutzer mit lmremove entfernen ===
+# (manuell oder per Erweiterung)
 
-# === 3. Nur den Vendor-Daemon stoppen ===
-log "Stoppe Vendor Daemon $VENDOR_NAME..."
-pkill -f "$VENDOR_NAME"
-sleep 3
+# === 3. Lizenzserver stoppen ===
+log "Stoppe lmgrd..."
+$LMUTIL lmdown -c "$LICENSE_FILE" -q
+sleep 5
 
-# === 4. Lizenzdatei sichern und ersetzen ===
-log "Backup & Update der Lizenzdatei..."
+if pgrep -f "lmgrd" > /dev/null; then
+    log "lmgrd läuft noch – Erzwinge Shutdown..."
+    pkill -f "lmgrd"
+    sleep 3
+fi
+
+# === 4. Lizenzdatei ersetzen ===
+log "Sichere und ersetze die Lizenzdatei..."
 cp "$LICENSE_FILE" "$LICENSE_FILE.bak.$(date +%F_%H-%M)"
 cp "$NEW_LICENSE" "$LICENSE_FILE"
 
-# === 5. Vendor-Daemon neu starten ===
-log "Starte Vendor Daemon $VENDOR_NAME neu..."
-bash "$START_SCRIPT"
-
+# === 5. Lizenzserver neu starten ===
+log "Starte lmgrd neu..."
+nohup "$LMGRD" -c "$LICENSE_FILE" -l "$LMGRD_LOG" > /dev/null 2>&1 &
 sleep 5
 
-# === 6. Lizenzserver reread ===
-log "Führe lmreread aus..."
-$LMUTIL lmreread -c "$LICENSE_FILE"
+if pgrep -f "lmgrd" > /dev/null; then
+    log "lmgrd erfolgreich gestartet."
+else
+    log "Fehler: lmgrd konnte nicht gestartet werden!"
+    exit 1
+fi
 
-# === 7. Blockierung in options-Datei wieder entfernen ===
-log "Entferne temporäre Lizenz-Blockierung..."
+# === 6. RESERVE-Eintrag wieder entfernen ===
+log "Entferne Lizenz-Blockierung..."
 sed -i '/RESERVE ALL USER update_block/d' "$OPTIONS_FILE"
 $LMUTIL lmreread -c "$LICENSE_FILE"
 
-log "Update abgeschlossen – Vendor Daemon $VENDOR_NAME läuft wieder."
+log "✅ Lizenzupdate für $VENDOR_NAME abgeschlossen mit minimaler Downtime."
