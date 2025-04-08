@@ -1,85 +1,53 @@
 #!/bin/bash
 
-# Pfade setzen
-LMUTIL="/opt/flexlm/lmutil"
-LICENSE_FILE="/opt/flexlm/license.dat"
-NEW_LICENSE_FILE="/tmp/new_license.dat"
-OPTIONS_FILE="/opt/flexlm/license.opt"
-VENDOR_DAEMON="vendor_daemon_name"
-LIBC_UPDATE="libc6" # oder passende Version für dein System
-LOG_FILE="/var/log/flexlm_update.log"
+# === Konfiguration ===
+LMUTIL="/opt/flexlm/bin/lmutil"
+LICENSE_FILE="/opt/flexlm/licenses/license.dat"
+OPTIONS_FILE="/opt/flexlm/licenses/license.opt"
+NEW_LICENSE="/tmp/new_license.dat"
+VENDOR_NAME="mathlm"  # z.B. für MathLM oder anpassen
+START_SCRIPT="/opt/flexlm/start_mathlm.sh"
+LOGFILE="/opt/flexlm/logs/license_update.log"
 
-# Logging-Funktion
+# === Logging-Funktion ===
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a $LOG_FILE
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOGFILE"
 }
 
-# 1. Lizenzblockierung aktivieren (keine neuen Buchungen)
-log "Lizenzen blockieren..."
-echo "RESERVE ALL USER admin_user" >> $OPTIONS_FILE
-$LMUTIL lmreread -c $LICENSE_FILE
+# === 1. Lizenzen für USER blockieren ===
+log "Blockiere neue Lizenzbuchungen in Options-Datei..."
+echo "RESERVE ALL USER update_block" >> "$OPTIONS_FILE"
+$LMUTIL lmreread -c "$LICENSE_FILE"
 
-# 2. Laufende Lizenzen beenden
-log "Beende aktive Lizenzen..."
-ACTIVE_USERS=$($LMUTIL lmstat -c $LICENSE_FILE -a | grep "Users of" | wc -l)
-while [[ $ACTIVE_USERS -gt 0 ]]; do
-    USERS=$($LMUTIL lmstat -c $LICENSE_FILE -a | grep "server" | awk '{print $3, $1, $2, $6}')
-    for LINE in $USERS; do
-        set -- $LINE
-        FEATURE=$1
-        USER=$2
-        HOST=$3
-        LICENSE_ID=$4
-        $LMUTIL lmremove $FEATURE $USER $HOST $LICENSE_ID
-        log "Sitzung für $USER entfernt."
-    done
-    sleep 5
-    ACTIVE_USERS=$($LMUTIL lmstat -c $LICENSE_FILE -a | grep "Users of" | wc -l)
-done
+# === 2. Aktive Nutzer anzeigen ===
+log "Aktive Lizenzen für $VENDOR_NAME:"
+$LMUTIL lmstat -c "$LICENSE_FILE" -a | grep -A4 "$VENDOR_NAME"
 
-# 3. Vendor Daemon stoppen
-log "Stoppe Vendor Daemon..."
-pkill -f "$VENDOR_DAEMON"
+# Optional: gezielt Sitzungen mit lmremove beenden
+
+# === 3. Nur den Vendor-Daemon stoppen ===
+log "Stoppe Vendor Daemon $VENDOR_NAME..."
+pkill -f "$VENDOR_NAME"
 sleep 3
-if pgrep -f "$VENDOR_DAEMON" > /dev/null; then
-    log "Vendor Daemon läuft noch – erzwungenes Beenden..."
-    kill -9 $(pgrep -f "$VENDOR_DAEMON")
-fi
 
-# 4. Lizenzdatei aktualisieren
-log "Ersetze die Lizenzdatei..."
-cp $LICENSE_FILE "$LICENSE_FILE.bak"
-cp $NEW_LICENSE_FILE $LICENSE_FILE
+# === 4. Lizenzdatei sichern und ersetzen ===
+log "Backup & Update der Lizenzdatei..."
+cp "$LICENSE_FILE" "$LICENSE_FILE.bak.$(date +%F_%H-%M)"
+cp "$NEW_LICENSE" "$LICENSE_FILE"
 
-# 5. System-Updates durchführen (libc zuerst, dann alles andere)
-log "Prüfe libc-Update..."
-if dpkg-query -W -f='${Status}' $LIBC_UPDATE 2>/dev/null | grep -q "install ok installed"; then
-    log "Libc ist bereits installiert. Prüfe Updates..."
-    apt-get install --only-upgrade -y $LIBC_UPDATE
-else
-    log "Libc wird installiert..."
-    apt-get install -y $LIBC_UPDATE
-fi
-
-# 6. Vollständiges Systemupdate durchführen (optional)
-log "Führe Systemupdates durch..."
-apt-get update && apt-get upgrade -y
-
-# 7. Vendor Daemon neu starten
-log "Starte Vendor Daemon neu..."
-nohup /opt/flexlm/$VENDOR_DAEMON > /dev/null 2>&1 &
+# === 5. Vendor-Daemon neu starten ===
+log "Starte Vendor Daemon $VENDOR_NAME neu..."
+bash "$START_SCRIPT"
 
 sleep 5
-if pgrep -f "$VENDOR_DAEMON" > /dev/null; then
-    log "Vendor Daemon erfolgreich gestartet."
-else
-    log "Fehler: Vendor Daemon konnte nicht gestartet werden!"
-    exit 1
-fi
 
-# 8. Lizenzen wieder freigeben
-log "Lizenzen wieder freigeben..."
-sed -i '/RESERVE ALL USER admin_user/d' $OPTIONS_FILE
-$LMUTIL lmreread -c $LICENSE_FILE
+# === 6. Lizenzserver reread ===
+log "Führe lmreread aus..."
+$LMUTIL lmreread -c "$LICENSE_FILE"
 
-log "Lizenz-Update mit minimaler Downtime abgeschlossen!"
+# === 7. Blockierung in options-Datei wieder entfernen ===
+log "Entferne temporäre Lizenz-Blockierung..."
+sed -i '/RESERVE ALL USER update_block/d' "$OPTIONS_FILE"
+$LMUTIL lmreread -c "$LICENSE_FILE"
+
+log "Update abgeschlossen – Vendor Daemon $VENDOR_NAME läuft wieder."
